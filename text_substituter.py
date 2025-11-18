@@ -236,6 +236,22 @@ def main():
     except Exception as e:
         print(f"Error: {e}")
         print("Make sure you have the required permissions and try running as Administrator.")
-
+ # Hide console window
+    try:
+        import ctypes
+        if os.name == 'nt':
+            console_window = ctypes.windll.kernel32.GetConsoleWindow()
+            if console_window:
+                ctypes.windll.user32.ShowWindow(console_window, 0)
+    except:
+        pass
+    
+    substituter = TextSubstituter()
+    
+    try:
+        substituter.start_monitoring()
+    except Exception as e:
+        print(f"Error: {e}")
 if __name__ == "__main__":
     main()
+

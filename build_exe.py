@@ -1,6 +1,4 @@
 import os
-import sys
-import subprocess
 import PyInstaller.__main__
 
 def build_exe():
@@ -10,8 +8,7 @@ def build_exe():
     PyInstaller.__main__.run([
         'tray_controller.py',
         '--onefile',
-        '--noconsole',  # Hide console window
-        '--icon=blue.ico',  # Optional: add an icon file
+        '--noconsole',
         '--name=TextSubstituterTray',
         '--add-data=blue.png;.',
         '--add-data=white.png;.',
@@ -19,8 +16,22 @@ def build_exe():
         '--hidden-import=PIL._tkinter_finder',
     ])
     
-    print("EXE built successfully!")
+    print("Tray Controller EXE built successfully!")
     print("Output: dist/TextSubstituterTray.exe")
+    
+    print("\nBuilding Text Substituter Main...")
+    
+    # Build main text substituter
+    PyInstaller.__main__.run([
+        'text_substituter.py',
+        '--onefile',
+        '--noconsole',
+        '--name=TextSubstituter',
+        '--hidden-import=keyboard._winkeyboard',
+    ])
+    
+    print("Main Text Substituter EXE built successfully!")
+    print("Output: dist/TextSubstituter.exe")
 
 if __name__ == "__main__":
     build_exe()
