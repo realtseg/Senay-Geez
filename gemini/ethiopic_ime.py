@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 from pynput import keyboard
 from pynput.keyboard import Key, Controller
 import csv
@@ -7,225 +7,219 @@ import os
 import sys
 import threading
 import time
+import webbrowser
+import pystray
+from PIL import Image, ImageTk, ImageDraw
 
-# Default configuration including user examples (h, T, etc)
-DEFAULT_CONFIG = """h,ሀ
-hu,ሁ
-hi,ሂ
-ha,ሃ
-hy,ሄ
-he,ህ
-ho,ሆ
-hW,ኋ
-l,ለ
-lu,ሉ
-li,ሊ
-la,ላ
-ly,ሌ
-le,ል
-lo,ሎ
-lW,ሏ
-s,ሰ
-su,ሱ
-si,ሲ
-sa,ሳ
-sy,ሴ
-se,ስ
-so,ሶ
-sW,ሷ
-r,ረ
-ru,ሩ
-ri,ሪ
-ra,ራ
-ry,ሬ
-re,ር
-ro,ሮ
-rW,ሯ
-b,በ
-bu,ቡ
-bi,ቢ
-ba,ባ
-by,ቤ
-be,ብ
-bo,ቦ
-bW,ቧ
-t,ተ
-tu,ቱ
-ti,ቲ
-ta,ታ
-ty,ቴ
-te,ት
-to,ቶ
-tW,ቷ
-n,ነ
-nu,ኑ
-ni,ኒ
-na,ና
-ny,ኔ
-ne,ን
-no,ኖ
-nW,ኗ
-a,አ
-u,ኡ
-i,ኢ
-aa,ኣ
-ee,ኤ
-e,እ
-o,ኦ
-k,ከ
-ku,ኩ
-ki,ኪ
-ka,ካ
-ky,ኬ
-ke,ክ
-ko,ኮ
-kW,ኳ
-w,ወ
-wu,ዉ
-wi,ዊ
-wa,ዋ
-wy,ዌ
-we,ው
-wo,ዎ
-z,ዘ
-zu,ዙ
-zi,ዚ
-za,ዛ
-zy,ዜ
-ze,ዝ
-zo,ዞ
-zW,ዟ
-d,ደ
-du,ዱ
-di,ዲ
-da,ዳ
-dy,ዴ
-de,ድ
-do,ዶ
-dW,ዷ
-T,ጠ
-Tu,ጡ
-Ti,ጢ
-Ta,ጣ
-Ty,ጤ
-Te,ጥ
-To,ጦ
-TW,ጧ
-T[,ፀ
-T[u,ፁ
-T[i,ፂ
-T[a,ፃ
-T[y,ፄ
-T[e,ፅ
-T[o,ፆ
-"""
-
-class EthiopicIME:
+class SenayGeezIME:
     def __init__(self, root):
         self.root = root
-        self.root.title("Ethiopic IME")
-        self.root.geometry("300x150")
-        self.root.attributes('-topmost', True)
+        self.root.withdraw()  # Start hidden, we only show splash then tray
+        self.root.title("Senay Geez")
+
+        # 1. Determine Base Path (Where the script or exe is located)
+        self.base_path = self.get_base_path()
         
-        # IME State
-        self.is_active = tk.BooleanVar(value=True)
+        # 2. Define File Paths
+        self.config_path = os.path.join(self.base_path, "config.csv")
+        self.icon_path = os.path.join(self.base_path, "app.ico")
+        self.splash_path = os.path.join(self.base_path, "splash.jpg")
+        self.blue_img_path = os.path.join(self.base_path, "blue.png")
+        self.white_img_path = os.path.join(self.base_path, "white.png")
+
+        # 3. Set Window Icon (if available)
+        if os.path.exists(self.icon_path):
+            try:
+                self.root.iconbitmap(self.icon_path)
+            except Exception:
+                pass
+
+        # 4. Initialize State
+        self.is_active = True
         self.mapping = {}
         self.output_chars = set()
         self.buffer = ""
         self.keyboard_controller = Controller()
         self.listener = None
-        
-        # Synchronization flags
-        self.ignore_backspaces = 0 
+        self.ignore_backspaces = 0
+        self.tray_icon = None
 
-        # Setup UI
-        self.setup_ui()
-        
-        # Setup Data
-        self.config_file = "config.csv"
-        self.ensure_config_exists()
-        self.load_mapping()
-        
-        # Start Keyboard Listener
+        # 5. Show Splash Screen
+        self.show_splash()
+
+        # 6. Load Data & Start Services
+        self.load_config()
+        self.setup_tray()
         self.start_listener()
 
-    def setup_ui(self):
-        frame = tk.Frame(self.root, padx=10, pady=10)
-        frame.pack(fill=tk.BOTH, expand=True)
+    def get_base_path(self):
+        """Returns the directory where the executable or script is located."""
+        if getattr(sys, 'frozen', False):
+            # Running as compiled exe
+            return os.path.dirname(sys.executable)
+        else:
+            # Running as python script
+            return os.path.dirname(os.path.abspath(__file__))
 
-        self.toggle_chk = tk.Checkbutton(
-            frame, 
-            text="Enable IME", 
-            variable=self.is_active, 
-            command=self.on_toggle,
-            font=("Segoe UI", 12, "bold")
-        )
-        self.toggle_chk.pack(pady=5)
+    def show_splash(self):
+        """Displays splash.jpg for 5 seconds then closes."""
+        if not os.path.exists(self.splash_path):
+            # If no splash image, just return, app runs in background
+            return
 
-        self.info_label = tk.Label(frame, text="Status: Running", fg="green")
-        self.info_label.pack(pady=5)
+        splash = tk.Toplevel(self.root)
+        splash.overrideredirect(True) # Remove window border
+        splash.attributes('-topmost', True)
 
-        btn_load = tk.Button(frame, text="Load Custom CSV", command=self.load_custom_csv)
-        btn_load.pack(pady=5, fill=tk.X)
+        try:
+            # Load and display image
+            pil_img = Image.open(self.splash_path)
+            # Resize if necessary or ensure it fits, but user said 640x360 provided
+            # We keep a reference to prevent GC
+            self.splash_img = ImageTk.PhotoImage(pil_img)
+            
+            width, height = pil_img.size
+            
+            # Center on screen
+            screen_w = self.root.winfo_screenwidth()
+            screen_h = self.root.winfo_screenheight()
+            x = (screen_w // 2) - (width // 2)
+            y = (screen_h // 2) - (height // 2)
+            splash.geometry(f"{width}x{height}+{x}+{y}")
 
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+            lbl = tk.Label(splash, image=self.splash_img, bg="black")
+            lbl.pack(fill=tk.BOTH, expand=True)
 
-    def ensure_config_exists(self):
-        if not os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, "w", encoding="utf-8") as f:
-                    f.write(DEFAULT_CONFIG)
-            except Exception as e:
-                messagebox.showerror("Error", f"Could not create default config: {e}")
+            # Close after 5 seconds
+            self.root.after(5000, splash.destroy)
+        except Exception as e:
+            print(f"Splash error: {e}")
+            splash.destroy()
 
-    def load_mapping(self):
+    def load_config(self):
+        """Loads mapping strictly from config.csv in the app folder."""
+        if not os.path.exists(self.config_path):
+            messagebox.showerror("Config Missing", f"Could not find config.csv in:\n{self.base_path}\n\nPlease add the file and restart.")
+            return
+
         try:
             new_mapping = {}
-            with open(self.config_file, "r", encoding="utf-8") as f:
+            with open(self.config_path, "r", encoding="utf-8") as f:
                 reader = csv.reader(f)
                 for row in reader:
                     if len(row) >= 2:
                         key = row[0].strip()
                         val = row[1].strip()
-                        # Sort mapping by key length descending to ensure longest match wins if needed
                         new_mapping[key] = val
             
             self.mapping = new_mapping
             self.output_chars = set(self.mapping.values())
-            self.info_label.config(text=f"Loaded {len(self.mapping)} keys")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load CSV: {e}")
+            messagebox.showerror("Config Error", f"Error reading config.csv:\n{e}")
 
-    def load_custom_csv(self):
-        filename = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")])
-        if filename:
-            self.config_file = filename
-            self.load_mapping()
+    # --- TRAY ICON LOGIC ---
+    def setup_tray(self):
+        threading.Thread(target=self._run_tray, daemon=True).start()
 
-    def on_toggle(self):
-        if self.is_active.get():
-            self.info_label.config(text="Status: Active", fg="green")
-            self.buffer = ""
+    def _run_tray(self):
+        # Load Icon
+        icon_img = None
+        if os.path.exists(self.icon_path):
+            try:
+                icon_img = Image.open(self.icon_path)
+            except Exception:
+                pass
+        
+        # Fallback Icon Generator
+        if icon_img is None:
+            width = 64
+            height = 64
+            icon_img = Image.new('RGB', (width, height), "black")
+            dc = ImageDraw.Draw(icon_img)
+            dc.rectangle((width // 4, height // 4, width * 3 // 4, height * 3 // 4), fill="white")
+
+        menu = pystray.Menu(
+            pystray.MenuItem("Help", self.open_help),
+            pystray.MenuItem("Settings", self.open_settings),
+            pystray.MenuItem("Exit", self.quit_app)
+        )
+
+        self.tray_icon = pystray.Icon("Senay Geez", icon_img, "Senay Geez IME", menu)
+        self.tray_icon.run()
+
+    def open_help(self, icon, item):
+        webbrowser.open("https://trufat.net/senaygeez/")
+
+    def open_settings(self, icon, item):
+        if os.path.exists(self.config_path):
+            try:
+                os.startfile(self.config_path)
+            except Exception as e:
+                print(f"Error opening settings: {e}")
         else:
-            self.info_label.config(text="Status: Paused", fg="gray")
-            self.buffer = ""
+            # If it doesn't exist, try to create an empty one or warn
+            messagebox.showwarning("Settings", "config.csv not found.")
 
+    def quit_app(self, icon, item):
+        self.tray_icon.stop()
+        self.root.quit()
+        os._exit(0)
+
+    # --- VISUAL NOTIFICATION ---
+    def show_notification(self, is_on):
+        self.root.after(0, lambda: self._create_overlay(is_on))
+
+    def _create_overlay(self, is_on):
+        image_file = self.blue_img_path if is_on else self.white_img_path
+        
+        top = tk.Toplevel(self.root)
+        top.overrideredirect(True)
+        top.attributes('-topmost', True)
+        
+        # Position Bottom Right
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        win_w = 100
+        win_h = 100
+        x_pos = screen_w - win_w - 20
+        y_pos = screen_h - win_h - 60 
+        top.geometry(f"{win_w}x{win_h}+{x_pos}+{y_pos}")
+
+        try:
+            # Use PIL for loading png to support transparency/formats better
+            pil_img = Image.open(image_file)
+            # Resize to fit notification box if needed
+            pil_img = pil_img.resize((win_w, win_h), Image.Resampling.LANCZOS)
+            self.current_notify_img = ImageTk.PhotoImage(pil_img)
+            
+            lbl = tk.Label(top, image=self.current_notify_img, bg="black")
+            lbl.pack(fill=tk.BOTH, expand=True)
+        except Exception:
+            # Fallback
+            color = "blue" if is_on else "white"
+            text_color = "white" if is_on else "black"
+            text = "ON" if is_on else "OFF"
+            lbl = tk.Label(top, text=text, bg=color, fg=text_color, font=("Arial", 20, "bold"))
+            lbl.pack(fill=tk.BOTH, expand=True)
+
+        top.after(2000, top.destroy)
+
+    # --- KEYBOARD LISTENER ---
     def start_listener(self):
-        # Using on_press for immediate feedback
         self.listener = keyboard.Listener(on_press=self.on_key_press)
         self.listener.start()
 
-    def on_close(self):
-        if self.listener:
-            self.listener.stop()
-        self.root.destroy()
-        sys.exit()
-
     def on_key_press(self, key):
-        if not self.is_active.get():
+        # Toggle Logic
+        if key == Key.page_up:
+            self.is_active = not self.is_active
+            self.buffer = ""
+            self.show_notification(self.is_active)
             return
 
-        # 1. Handle Backspaces (Ignore our own, clear buffer on user press)
+        if not self.is_active:
+            return
+
         if key == Key.backspace:
             if self.ignore_backspaces > 0:
                 self.ignore_backspaces -= 1
@@ -234,12 +228,10 @@ class EthiopicIME:
                 self.buffer = ""
                 return
 
-        # 2. Handle Space/Enter -> Reset buffer
         if key == Key.space or key == Key.enter:
             self.buffer = ""
             return
 
-        # 3. Extract Character
         char = None
         try:
             if hasattr(key, 'char') and key.char:
@@ -250,7 +242,6 @@ class EthiopicIME:
         if not char:
             return
 
-        # 4. Ignore Ethiopic Output (prevent loops)
         if char in self.output_chars:
             return
 
@@ -259,68 +250,47 @@ class EthiopicIME:
     def process_char(self, char):
         candidate = self.buffer + char
         
-        # --- CASE 1: Match Found (e.g., "h"->ሀ or "hu"->ሁ) ---
+        # Case 1: Exact Match
         if candidate in self.mapping:
-            if self.buffer:
-                # We are extending a sequence (e.g. 'h' was already 'ሀ', now adding 'u')
-                # We need to remove the previous Ethiopic char AND the new latin char.
-                # Backspace count = 2
-                self.apply_replacement(candidate, 2)
-            else:
-                # We are starting a new sequence (e.g. 'h')
-                # We just need to remove the new latin char.
-                # Backspace count = 1
-                self.apply_replacement(candidate, 1)
+            backspaces = 2 if self.buffer else 1
+            self.apply_replacement(candidate, backspaces)
             return
 
-        # --- CASE 2: Partial Match (Prefix) ---
-        # e.g., user typed "h" (buffer="h"), now types "W" (candidate="hW").
-        # If "hW" isn't in map but "hWa" is, we wait.
-        # NOTE: In your specific CSV, "hW" IS in the map, so it hits Case 1.
-        # But if you had a 3-letter code like "abc", this handles "ab".
+        # Case 2: Prefix Match
         is_prefix = any(k.startswith(candidate) for k in self.mapping.keys())
         if is_prefix:
             self.buffer = candidate
             return
         
-        # --- CASE 3: Sequence Broken ---
-        # e.g. Buffer="h" (screen ሀ). User types "h". Candidate "hh".
-        # "hh" is not in map. Sequence breaks.
-        # The user effectively "committed" the previous character.
-        # We treat the NEW char ("h") as the start of a brand new sequence.
-        
+        # Case 3: Broken Sequence
         new_buffer = char
         if new_buffer in self.mapping:
-            # The new char itself is a match (e.g. second 'h' -> 'ሀ')
-            # We only remove the new char (1 backspace). We leave the old 'ሀ' alone.
             self.apply_replacement(new_buffer, 1)
         elif any(k.startswith(new_buffer) for k in self.mapping.keys()):
-            # The new char is a prefix of something else
             self.buffer = new_buffer
         else:
-            # Total reset
             self.buffer = ""
 
     def apply_replacement(self, match_key, backspaces_needed):
         eth_char = self.mapping[match_key]
-        
-        # Tell listener to ignore the upcoming backspaces
         self.ignore_backspaces += backspaces_needed
         
-        # 1. Delete raw input
         for _ in range(backspaces_needed):
             self.keyboard_controller.tap(Key.backspace)
-            # No sleep needed usually, but tiny buffer helps some apps
             
-        # 2. Type Ethiopic character
         self.keyboard_controller.type(eth_char)
-        
-        # 3. Update buffer to the current matched key
         self.buffer = match_key
 
 if __name__ == "__main__":
+    # Ensure high DPI awareness for Windows
+    try:
+        from ctypes import windll
+        windll.shcore.SetProcessDpiAwareness(1)
+    except:
+        pass
+
     root = tk.Tk()
-    app = EthiopicIME(root)
+    app = SenayGeezIME(root)
     try:
         root.mainloop()
     except KeyboardInterrupt:
